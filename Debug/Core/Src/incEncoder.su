@@ -1,0 +1,3 @@
+incEncoder.c:12:6:IncEnc_Init	8	static
+incEncoder.c:35:6:refreshIncEnc	40	static
+incEncoder.c:73:6:resetIncEnc	16	static

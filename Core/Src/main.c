@@ -73,7 +73,7 @@ const float VDC = 141.4f;
 
 const float V_F_Rate = 200.0f / 60.0f;
 
-float freq_ref = 0.0;
+float freq_ref = 10.0;
 float freq = 0.0;
 float voltage = 0.0;
 
@@ -83,6 +83,13 @@ volatile float Vu = 0, Vv = 0, Vw = 0;
 
 volatile float amp_u = 0, amp_v = 0, amp_w = 0;
 
+
+#define SAMPLE_NUM	10000
+
+float current_sample[SAMPLE_NUM] = {0};
+
+int sample_start = 0;
+int sample_count = 0;
 
 
 /* USER CODE END PV */
@@ -159,7 +166,7 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		Vv = voltage / sqrt(3) * sin(phase - 2.0f * M_PI / 3.0f);
 		Vw = voltage / sqrt(3) * sin(phase - 4.0f * M_PI / 3.0f);
 
-		phase += 2 * M_PI * freq * 0.001;
+		phase += 2 * M_PI * freq * 0.0001;
 
 		amp_u = Vu / VDC + 0.5;
 		amp_v = Vv / VDC + 0.5;
@@ -174,6 +181,21 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, htim->Init.Period * amp_v);
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, htim->Init.Period * amp_w);
 
+
+		if(sample_start == 1 && freq >= 9.0f)
+		{
+			current_sample[sample_count] = Iu;
+
+			if(sample_count < SAMPLE_NUM - 1)
+			{
+				sample_count++;
+			}
+			else
+			{
+				sample_start = 2;
+				freq_ref = 0.0;
+			}
+		}
 
 	}
 
@@ -252,6 +274,8 @@ int main(void)
 
   printf("Hello myServoAmpProject. \n");
 
+  sample_start = 1;
+
   IncEnc_Init();
 
   /* USER CODE END 2 */
@@ -264,6 +288,32 @@ int main(void)
 
 	  HAL_Delay(1);
 
+	  if(sample_start == 2 && freq <= 1.0)
+	  {
+		  int i;
+
+
+		  HAL_TIMEx_PWMN_Stop_IT(&htim8, TIM_CHANNEL_1);
+		  HAL_TIMEx_PWMN_Stop_IT(&htim8, TIM_CHANNEL_2);
+		  HAL_TIMEx_PWMN_Stop_IT(&htim8, TIM_CHANNEL_3);
+
+		  HAL_TIM_PWM_Stop_IT(&htim8, TIM_CHANNEL_1);
+		  HAL_TIM_PWM_Stop_IT(&htim8, TIM_CHANNEL_2);
+		  HAL_TIM_PWM_Stop_IT(&htim8, TIM_CHANNEL_3);
+
+		  HAL_Delay(100);
+
+		  for(i = 0; i < SAMPLE_NUM; i++)
+		  {
+			  printf("%f\n", current_sample[i]);
+		  }
+
+		  sample_start = 3;
+
+	  }
+
+
+
 	  refreshIncEnc(&incEnc);
 
 	  if(count < 10)
@@ -272,7 +322,7 @@ int main(void)
 	  }
 	  else
 	  {
-		  printf("count = %d\n", incEnc.htim->Instance->CNT);
+		  //printf("count = %d\n", incEnc.htim->Instance->CNT);
 		  count = 0;
 	  }
 

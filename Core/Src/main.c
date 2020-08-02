@@ -30,6 +30,7 @@
 
 #include "math.h"
 #include "incEncoder.h"
+#include "analogSensor.h"
 
 /* USER CODE END Includes */
 
@@ -66,7 +67,6 @@ volatile float V_Iu_offset = 1.6485;
 volatile float V_Iw_offset = 1.64145;
 
 
-
 // V/f control Test
 
 const float VDC = 141.4f;
@@ -84,9 +84,9 @@ volatile float Vu = 0, Vv = 0, Vw = 0;
 volatile float amp_u = 0, amp_v = 0, amp_w = 0;
 
 
-#define SAMPLE_NUM	10000
+#define SAMPLE_NUM	5000
 
-float current_sample[SAMPLE_NUM] = {0};
+float debug_dump[SAMPLE_NUM][4] = {{0}};
 
 int sample_start = 0;
 int sample_count = 0;
@@ -132,6 +132,8 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 
+		AnalogSensor_Refresh(&analogSensor);
+/*
 		Iu_raw = HAL_ADC_GetValue(&hadc1);
 		Iw_raw = HAL_ADC_GetValue(&hadc2);
 		Vdc_raw = HAL_ADC_GetValue(&hadc3);
@@ -145,7 +147,12 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		Iv = - Iu - Iw;
 
 		Vdc = (Vdc_raw / 4096.0f * 3.3 - 1.29) * 250.0f;
+*/
 
+		Iu = analogSensor.Iu;
+		Iv = analogSensor.Iv;
+		Iw = analogSensor.Iw;
+		Vdc = analogSensor.Vdc;
 
 		if((freq - freq_ref) < -0.02)
 		{
@@ -168,9 +175,12 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		phase += 2 * M_PI * freq * 0.0001;
 
-		amp_u = Vu / VDC + 0.5;
-		amp_v = Vv / VDC + 0.5;
-		amp_w = Vw / VDC + 0.5;
+		if(Vdc > 5.0f)
+		{
+			amp_u = Vu / VDC + 0.5;
+			amp_v = Vv / VDC + 0.5;
+			amp_w = Vw / VDC + 0.5;
+		}
 
 		if(amp_u < 0.0){ amp_u = 0.0; }else if(amp_u > 1.0){ amp_u = 1.0; }
 		if(amp_v < 0.0){ amp_v = 0.0; }else if(amp_v > 1.0){ amp_v = 1.0; }
@@ -184,7 +194,10 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		if(sample_start == 1 && freq >= 9.0f)
 		{
-			current_sample[sample_count] = Iu;
+			debug_dump[sample_count][0] = Iu;
+			debug_dump[sample_count][1] = Iv;
+			debug_dump[sample_count][2] = Iw;
+			debug_dump[sample_count][3] = Vdc;
 
 			if(sample_count < SAMPLE_NUM - 1)
 			{
@@ -245,6 +258,11 @@ int main(void)
   /******************** Initialization ********************/
 
 
+  AnalogSensor_Init();
+
+  AnalogSensor_Start(&analogSensor);
+
+
   // PWM Setting
   __HAL_TIM_CLEAR_FLAG(&htim8, TIM_FLAG_UPDATE);
   __HAL_TIM_ENABLE_IT(&htim8, TIM_IT_UPDATE);
@@ -261,22 +279,26 @@ int main(void)
   HAL_TIMEx_PWMN_Start_IT(&htim8, TIM_CHANNEL_2);
   HAL_TIMEx_PWMN_Start_IT(&htim8, TIM_CHANNEL_3);
 
+  sample_start = 1;
+
+
+  IncEnc_Init();
 
 
   // ADC Setting
+  /*
   HAL_ADC_Start_IT(&hadc1);
   HAL_ADC_Start_IT(&hadc2);
   HAL_ADC_Start_IT(&hadc3);
-
+  */
 
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 
+  //printf("Hello myServoAmpProject. \n");
 
-  printf("Hello myServoAmpProject. \n");
 
-  sample_start = 1;
 
-  IncEnc_Init();
+
 
   /* USER CODE END 2 */
 
@@ -305,7 +327,7 @@ int main(void)
 
 		  for(i = 0; i < SAMPLE_NUM; i++)
 		  {
-			  printf("%f\n", current_sample[i]);
+			  printf("%f, %f, %f, %f\n", debug_dump[i][0], debug_dump[i][1], debug_dump[i][2], debug_dump[i][3]);
 		  }
 
 		  sample_start = 3;

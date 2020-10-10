@@ -73,7 +73,7 @@ const float VDC = 141.4f;
 
 const float V_F_Rate = 200.0f / 60.0f;
 
-float freq_ref = 10.0;
+float freq_ref = 0.0;
 float freq = 0.0;
 float voltage = 0.0;
 
@@ -174,6 +174,11 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		Vw = voltage / sqrt(3) * sin(phase - 4.0f * M_PI / 3.0f);
 
 		phase += 2 * M_PI * freq * 0.0001;
+		if(phase > M_PI) phase -= 2 * M_PI;
+		if(phase < -M_PI) phase += 2 * M_PI;
+
+
+		Vdc = 141.4;
 
 		if(Vdc > 5.0f)
 		{
@@ -186,12 +191,17 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		if(amp_v < 0.0){ amp_v = 0.0; }else if(amp_v > 1.0){ amp_v = 1.0; }
 		if(amp_w < 0.0){ amp_w = 0.0; }else if(amp_w > 1.0){ amp_w = 1.0; }
 
+		/*
+		amp_u = 0.9;
+		amp_v = 0.6;
+		amp_w = 0.5;
+		*/
 
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, htim->Init.Period * amp_u);
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, htim->Init.Period * amp_v);
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_3, htim->Init.Period * amp_w);
 
-
+#if 0
 		if(sample_start == 1 && freq >= 9.0f)
 		{
 			debug_dump[sample_count][0] = Iu;
@@ -209,6 +219,8 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 				freq_ref = 0.0;
 			}
 		}
+
+#endif
 
 	}
 
@@ -309,7 +321,7 @@ int main(void)
 	  static int count = 0;
 
 	  HAL_Delay(1);
-
+#if 0
 	  if(sample_start == 2 && freq <= 1.0)
 	  {
 		  int i;
@@ -333,7 +345,7 @@ int main(void)
 		  sample_start = 3;
 
 	  }
-
+#endif
 
 
 	  refreshIncEnc(&incEnc);

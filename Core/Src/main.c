@@ -31,6 +31,7 @@
 #include "math.h"
 #include "incEncoder.h"
 #include "analogSensor.h"
+#include "sin_t.h"
 
 /* USER CODE END Includes */
 
@@ -55,6 +56,7 @@
 IncEnc_TypeDef incEnc;
 
 
+// Sensor
 
 volatile uint32_t Iu_raw = 0;
 volatile uint32_t Iv_raw = 0;
@@ -74,23 +76,24 @@ float gain_v2i = 50.0f / 1.33333f / 5.0; // 1/[V/AT] / Turn
 
 float ADC_resolution = 4096.0f;
 
-
-// V/f control Test
-
 const float VDC = 141.4f;
 
-const float V_F_Rate = 200.0f / 60.0f;
 
-float freq_ref = 10.0;
-float freq = 0.0;
-float voltage = 0.0;
+float Id = 0.0f;
+float Iq = 0.0f;
 
-float phase = 0.0;
 
-volatile float Vu = 0, Vv = 0, Vw = 0;
+// state variable
+
+float Vd_ref = 0.0, Vq_ref = 0.0;
+
+volatile float Vu_ref = 0, Vv_ref = 0, Vw_ref = 0;
 
 volatile float amp_u = 0, amp_v = 0, amp_w = 0;
 
+float cos_theta_re = 0.0f, sin_theta_re = 0.0f;
+
+// Dump
 
 #define SAMPLE_NUM	5000
 
@@ -135,6 +138,30 @@ void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin)
 }
 
 
+void uvw2dq(float *d, float *q, float u, float v, float w, float Cos, float Sin)
+{
+	*d = 0.816496580927726f * (
+			+ u * Cos
+			+ v * (-0.5f * Cos + 0.8660254037844386f * Sin)
+			+ w * (-0.5f * Cos - 0.8660254037844386f * Sin));
+
+	*q = 0.816496580927726f * (
+			- u * Sin
+			+ v * (0.5f * Sin + 0.8660254037844386f * Cos)
+			+ w * (0.5f * Sin - 0.8660254037844386f * Cos));
+}
+
+void dq2uvw(float *u, float *v, float *w, float d, float q, float Cos, float Sin)
+{
+	*u = 1.224744871391589f * (d * Cos - q * Sin);
+
+	*v = 1.224744871391589f * (
+			+ d * (-0.5f * Cos + 0.8660254037844386f * Sin)
+			+ q * (0.5f * Sin + 0.8660254037844386f * Cos));
+
+	*w = - *u - *v;
+}
+
 
 
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
@@ -145,8 +172,6 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 
-//		AnalogSensor_Refresh(&analogSensor);
-
 		IncEnc_Update(&incEnc);
 
 		Iu_raw = HAL_ADC_GetValue(&hadc1);
@@ -154,63 +179,37 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		Iw_raw = HAL_ADC_GetValue(&hadc3);
 //		Vdc_raw = HAL_ADC_GetValue(&hadc3);
 
-//		HAL_ADC_Start_IT(&hadc1);
-//		HAL_ADC_Start_IT(&hadc2);
-//		HAL_ADC_Start_IT(&hadc3);
+		HAL_ADC_Start_IT(&hadc1);
+		HAL_ADC_Start_IT(&hadc2);
+		HAL_ADC_Start_IT(&hadc3);
 
 		Iu = (Iu_raw / ADC_resolution * 3.3 - V_Iu_offset) * gain_v2i;
 		Iv = (Iv_raw / ADC_resolution * 3.3 - V_Iv_offset) * gain_v2i;
 		Iw = (Iw_raw / ADC_resolution * 3.3 - V_Iw_offset) * gain_v2i;
 
-//		Vdc = (Vdc_raw / 4096.0f * 3.3 - 1.29) * 250.0f;
+		cos_theta_re = cos_t(incEnc.theta_re);
+		sin_theta_re = sin_t(incEnc.theta_re);
 
-//		Iu = analogSensor.Iu;
-//		Iv = analogSensor.Iv;
-//		Iw = analogSensor.Iw;
-//		Vdc = analogSensor.Vdc;
+		uvw2dq(&Id, &Iq, Iu, Iv, Iw, cos_theta_re, sin_theta_re);
 
-		if((freq - freq_ref) < -0.02)
-		{
-			freq += 0.01;
-		}
-		else if((freq - freq_ref) > 0.02)
-		{
-			freq -= 0.01;
-		}
-		else
-		{
-			freq = freq_ref;
-		}
+		Vd_ref = 0.0;
+		Vq_ref = 5.0;
 
-		voltage = V_F_Rate * freq;
 
-		Vu = voltage / sqrt(3) * sin(phase);
-		Vv = voltage / sqrt(3) * sin(phase - 2.0f * M_PI / 3.0f);
-		Vw = voltage / sqrt(3) * sin(phase - 4.0f * M_PI / 3.0f);
-
-		phase += 2 * M_PI * freq * 0.0001;
-		if(phase > M_PI) phase -= 2 * M_PI;
-		if(phase < -M_PI) phase += 2 * M_PI;
-
+		dq2uvw(&Vu_ref, &Vv_ref, &Vw_ref, Vd_ref, Vq_ref, cos_theta_re, sin_theta_re);
 
 		Vdc = 141.4;
 
 		if(Vdc > 5.0f)
 		{
-			amp_u = Vu / VDC + 0.5;
-			amp_v = Vv / VDC + 0.5;
-			amp_w = Vw / VDC + 0.5;
+			amp_u = Vu_ref / VDC + 0.5;
+			amp_v = Vv_ref / VDC + 0.5;
+			amp_w = Vw_ref / VDC + 0.5;
 		}
 
 		if(amp_u < 0.0){ amp_u = 0.0; }else if(amp_u > 1.0){ amp_u = 1.0; }
 		if(amp_v < 0.0){ amp_v = 0.0; }else if(amp_v > 1.0){ amp_v = 1.0; }
 		if(amp_w < 0.0){ amp_w = 0.0; }else if(amp_w > 1.0){ amp_w = 1.0; }
-
-		/*
-		amp_u = 0.9;
-		amp_v = 0.6;
-		amp_w = 0.5;
-		*/
 
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_1, htim->Init.Period * amp_u);
 		__HAL_TIM_SET_COMPARE(htim, TIM_CHANNEL_2, htim->Init.Period * amp_v);
@@ -299,7 +298,7 @@ int main(void)
 
   HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 
-  IncEnc_Init(&incEnc, &htim1, 2000, 100E-6, 0.0, 0.0, 4);
+  IncEnc_Init(&incEnc, &htim1, 2000, 100E-6, 0.0, 3.14159f, 4);
 
   while(incEnc.z_pulse_detected == 0)
   {

@@ -52,8 +52,12 @@
 
 /* USER CODE BEGIN PV */
 
+IncEnc_TypeDef incEnc;
+
+
 
 volatile uint32_t Iu_raw = 0;
+volatile uint32_t Iv_raw = 0;
 volatile uint32_t Iw_raw = 0;
 volatile uint32_t Vdc_raw = 0;
 
@@ -62,9 +66,13 @@ float Iv = 0.0f;
 float Iw = 0.0f;
 float Vdc = 0.0f;
 
+volatile float V_Iu_offset = 1.6666f;
+volatile float V_Iv_offset = 1.6666f;
+volatile float V_Iw_offset = 1.6666f;
 
-volatile float V_Iu_offset = 1.6485;
-volatile float V_Iw_offset = 1.64145;
+float gain_v2i = 50.0f / 1.33333f / 5.0; // 1/[V/AT] / Turn
+
+float ADC_resolution = 4096.0f;
 
 
 // V/f control Test
@@ -73,7 +81,7 @@ const float VDC = 141.4f;
 
 const float V_F_Rate = 200.0f / 60.0f;
 
-float freq_ref = 0.0;
+float freq_ref = 10.0;
 float freq = 0.0;
 float voltage = 0.0;
 
@@ -115,9 +123,14 @@ void __io_putchar(uint8_t ch)
 
 void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin)
 {
-	printf("EXTI : %d\n", GPIO_Pin);
 
-	resetIncEnc(&incEnc);
+	printf("%d\n", incEnc.raw_count);
+
+	if(incEnc.z_pulse_detected == 0)
+	{
+		IncEnc_Reset(&incEnc);
+		incEnc.z_pulse_detected = 1;
+	}
 
 }
 
@@ -132,27 +145,29 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
 
-		AnalogSensor_Refresh(&analogSensor);
-/*
+//		AnalogSensor_Refresh(&analogSensor);
+
+		IncEnc_Update(&incEnc);
+
 		Iu_raw = HAL_ADC_GetValue(&hadc1);
-		Iw_raw = HAL_ADC_GetValue(&hadc2);
-		Vdc_raw = HAL_ADC_GetValue(&hadc3);
+		Iv_raw = HAL_ADC_GetValue(&hadc2);
+		Iw_raw = HAL_ADC_GetValue(&hadc3);
+//		Vdc_raw = HAL_ADC_GetValue(&hadc3);
 
-		HAL_ADC_Start_IT(&hadc1);
-		HAL_ADC_Start_IT(&hadc2);
-		HAL_ADC_Start_IT(&hadc3);
+//		HAL_ADC_Start_IT(&hadc1);
+//		HAL_ADC_Start_IT(&hadc2);
+//		HAL_ADC_Start_IT(&hadc3);
 
-		Iu = (Iu_raw / 4096.0f * 3.3 - V_Iu_offset) / 0.132f;
-		Iw = (Iw_raw / 4096.0f * 3.3 - V_Iw_offset) / 0.132f;
-		Iv = - Iu - Iw;
+		Iu = (Iu_raw / ADC_resolution * 3.3 - V_Iu_offset) * gain_v2i;
+		Iv = (Iv_raw / ADC_resolution * 3.3 - V_Iv_offset) * gain_v2i;
+		Iw = (Iw_raw / ADC_resolution * 3.3 - V_Iw_offset) * gain_v2i;
 
-		Vdc = (Vdc_raw / 4096.0f * 3.3 - 1.29) * 250.0f;
-*/
+//		Vdc = (Vdc_raw / 4096.0f * 3.3 - 1.29) * 250.0f;
 
-		Iu = analogSensor.Iu;
-		Iv = analogSensor.Iv;
-		Iw = analogSensor.Iw;
-		Vdc = analogSensor.Vdc;
+//		Iu = analogSensor.Iu;
+//		Iv = analogSensor.Iv;
+//		Iw = analogSensor.Iw;
+//		Vdc = analogSensor.Vdc;
 
 		if((freq - freq_ref) < -0.02)
 		{
@@ -270,10 +285,26 @@ int main(void)
   /******************** Initialization ********************/
 
 
-  AnalogSensor_Init();
+//  AnalogSensor_Init();
 
-  AnalogSensor_Start(&analogSensor);
+//  AnalogSensor_Start(&analogSensor);
 
+
+  // ADC Setting
+
+  HAL_ADC_Start_IT(&hadc1);
+  HAL_ADC_Start_IT(&hadc2);
+  HAL_ADC_Start_IT(&hadc3);
+
+
+  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+
+  IncEnc_Init(&incEnc, &htim1, 2000, 100E-6, 0.0, 0.0, 4);
+
+  while(incEnc.z_pulse_detected == 0)
+  {
+	  HAL_Delay(100);
+  }
 
   // PWM Setting
   __HAL_TIM_CLEAR_FLAG(&htim8, TIM_FLAG_UPDATE);
@@ -282,6 +313,7 @@ int main(void)
   HAL_TIM_GenerateEvent(&htim8, TIM_EVENTSOURCE_UPDATE);
   HAL_TIM_GenerateEvent(&htim8, TIM_EVENTSOURCE_TRIGGER);
 
+  __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 8990);
 
   HAL_TIM_PWM_Start_IT(&htim8, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start_IT(&htim8, TIM_CHANNEL_2);
@@ -294,17 +326,7 @@ int main(void)
   sample_start = 1;
 
 
-  IncEnc_Init();
 
-
-  // ADC Setting
-  /*
-  HAL_ADC_Start_IT(&hadc1);
-  HAL_ADC_Start_IT(&hadc2);
-  HAL_ADC_Start_IT(&hadc3);
-  */
-
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 
   //printf("Hello myServoAmpProject. \n");
 
@@ -348,7 +370,7 @@ int main(void)
 #endif
 
 
-	  refreshIncEnc(&incEnc);
+	  //refreshIncEnc(&incEnc);
 
 	  if(count < 10)
 	  {

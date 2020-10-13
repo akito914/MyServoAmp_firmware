@@ -98,7 +98,7 @@ volatile float amp_u = 0, amp_v = 0, amp_w = 0;
 
 float cos_theta_re = 0.0f, sin_theta_re = 0.0f;
 
-// Dump
+/***** Dump *****/
 
 #define SAMPLE_NUM	5000
 
@@ -106,6 +106,18 @@ float debug_dump[SAMPLE_NUM][4] = {{0}};
 
 int sample_start = 0;
 int sample_count = 0;
+
+
+/****** Sound **********/
+
+uint8_t play_enable[2] = {0, 0};
+
+uint8_t cursor_bufNum = 0;
+uint16_t cursor_pos = 0;
+uint8_t receive_pos = 0;
+
+uint8_t soundBuf[2][256] = {{0}};
+
 
 
 /* USER CODE END PV */
@@ -176,7 +188,7 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 	if(htim->Instance == TIM8 && !__HAL_TIM_IS_TIM_COUNTING_DOWN(htim))
 	{
 
-		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+		//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 
 		IncEnc_Update(&incEnc);
 
@@ -201,12 +213,44 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 			acr.Iq_ref = Iq_ref;
 		}
 
+
+		/***** Sound ******/
+
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, cursor_bufNum);
+		if(play_enable[cursor_bufNum] == 1)
+		{
+			acr.Id_ref = 0.0;
+			acr.Iq_ref = 0.058*0 + (soundBuf[cursor_bufNum][cursor_pos] * 0.0078125f - 1.0f) * 0.5;
+			cursor_pos++;
+			if(cursor_pos >= 256)
+			{
+				cursor_pos = 0;
+				play_enable[cursor_bufNum] = 0;
+				cursor_bufNum = (cursor_bufNum == 0)? 1: 0;
+			}
+			//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+		}
+		else
+		{
+			acr.Id_ref = 0.0;
+			acr.Iq_ref = 0.0;
+			//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+		}
+
+		/*******************/
+
+
 		// ACR
 		if(acr.enable == 1)
 		{
 			ACR_Refresh(&acr);
+#if 0
 			Vd_ref = acr.Vd_ref + incEnc.omega_re * -M_Lq * Iq;
 			Vq_ref = acr.Vq_ref + incEnc.omega_re * (M_Psi + M_Ld * Id);
+#else
+			Vd_ref = acr.Vd_ref;
+			Vq_ref = acr.Vq_ref;
+#endif
 		}
 		else
 		{
@@ -255,7 +299,7 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 #endif
 
 
-		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+		//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
 	}
 
@@ -363,14 +407,22 @@ int main(void)
 
   ACR_Start(&acr);
 
-  ASR_Start(&asr);
+  //ASR_Start(&asr);
 
 
   //printf("Hello myServoAmpProject. \n");
 
 
+  unsigned char c = 'a';
+  do{
+  HAL_UART_Transmit(&huart2, &c, 1, 1);
+  }while(HAL_UART_Receive(&huart2, soundBuf[0], 256, 1000) != HAL_OK);
+  play_enable[0] = 1;
 
-
+  do{
+  HAL_UART_Transmit(&huart2, &c, 1, 1);
+  }while(HAL_UART_Receive(&huart2, soundBuf[1], 256, 1000) != HAL_OK);
+  play_enable[1] = 1;
 
   /* USER CODE END 2 */
 
@@ -378,9 +430,27 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  static int count = 0;
 
-	  HAL_Delay(1);
+	  // バッファ0の再生完了を待つ
+	  //while(cursor_bufNum == 0);
+	  while(play_enable[0] != 0);
+
+	  do{
+		  HAL_UART_Transmit(&huart2, &c, 1, 1);
+	  }while(HAL_UART_Receive(&huart2, soundBuf[0], 256, 1000) != HAL_OK);
+	  play_enable[0] = 1;
+
+	  // バッファ1の再生完了を待つ
+	  //while(cursor_bufNum == 1);
+	  while(play_enable[1] != 0);
+
+	  do{
+		  HAL_UART_Transmit(&huart2, &c, 1, 1);
+	  }while(HAL_UART_Receive(&huart2, soundBuf[1], 256, 1000) != HAL_OK);
+	  play_enable[1] = 1;
+
+
+	  // HAL_Delay(1);
 #if 0
 	  if(sample_start == 2 && freq <= 1.0)
 	  {
@@ -400,18 +470,6 @@ int main(void)
 	  }
 #endif
 
-
-	  //refreshIncEnc(&incEnc);
-
-	  if(count < 10)
-	  {
-		  count++;
-	  }
-	  else
-	  {
-		  //printf("count = %d\n", incEnc.htim->Instance->CNT);
-		  count = 0;
-	  }
 
     /* USER CODE END WHILE */
 

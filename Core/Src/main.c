@@ -30,8 +30,13 @@
 
 #include "math.h"
 #include "incEncoder.h"
-#include "analogSensor.h"
 #include "sin_t.h"
+#include "ACR.h"
+#include "ASR.h"
+#include "peripheral.h"
+#include "parameters.h"
+
+
 
 /* USER CODE END Includes */
 
@@ -42,10 +47,16 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+
+#define TS (100E-6)
+
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
+
 
 /* USER CODE END PM */
 
@@ -55,33 +66,27 @@
 
 IncEnc_TypeDef incEnc;
 
+ACR_TypeDef acr;
+ASR_TypeDef asr;
 
 // Sensor
 
-volatile uint32_t Iu_raw = 0;
-volatile uint32_t Iv_raw = 0;
-volatile uint32_t Iw_raw = 0;
-volatile uint32_t Vdc_raw = 0;
 
 float Iu = 0.0f;
 float Iv = 0.0f;
 float Iw = 0.0f;
 float Vdc = 0.0f;
 
-volatile float V_Iu_offset = 1.6666f;
-volatile float V_Iv_offset = 1.6666f;
-volatile float V_Iw_offset = 1.6666f;
-
-float gain_v2i = 50.0f / 1.33333f / 5.0; // 1/[V/AT] / Turn
-
-float ADC_resolution = 4096.0f;
 
 const float VDC = 141.4f;
 
+float Id_ref = 0.0f, Iq_ref = 0.0f;
 
 float Id = 0.0f;
 float Iq = 0.0f;
 
+float omega = 0.0;
+float omega_ref = 0.0;
 
 // state variable
 
@@ -127,7 +132,7 @@ void __io_putchar(uint8_t ch)
 void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin)
 {
 
-	printf("%d\n", incEnc.raw_count);
+	//printf("%d\n", incEnc.raw_count);
 
 	if(incEnc.z_pulse_detected == 0)
 	{
@@ -136,6 +141,7 @@ void HAL_GPIO_EXTI_Callback (uint16_t GPIO_Pin)
 	}
 
 }
+
 
 
 void uvw2dq(float *d, float *q, float u, float v, float w, float Cos, float Sin)
@@ -170,31 +176,43 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 	if(htim->Instance == TIM8 && !__HAL_TIM_IS_TIM_COUNTING_DOWN(htim))
 	{
 
-		HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
 
 		IncEnc_Update(&incEnc);
 
-		Iu_raw = HAL_ADC_GetValue(&hadc1);
-		Iv_raw = HAL_ADC_GetValue(&hadc2);
-		Iw_raw = HAL_ADC_GetValue(&hadc3);
-//		Vdc_raw = HAL_ADC_GetValue(&hadc3);
-
-		HAL_ADC_Start_IT(&hadc1);
-		HAL_ADC_Start_IT(&hadc2);
-		HAL_ADC_Start_IT(&hadc3);
-
-		Iu = (Iu_raw / ADC_resolution * 3.3 - V_Iu_offset) * gain_v2i;
-		Iv = (Iv_raw / ADC_resolution * 3.3 - V_Iv_offset) * gain_v2i;
-		Iw = (Iw_raw / ADC_resolution * 3.3 - V_Iw_offset) * gain_v2i;
+		ADC_Refresh(&Iu, &Iv, &Iw);
 
 		cos_theta_re = cos_t(incEnc.theta_re);
 		sin_theta_re = sin_t(incEnc.theta_re);
 
 		uvw2dq(&Id, &Iq, Iu, Iv, Iw, cos_theta_re, sin_theta_re);
 
-		Vd_ref = 0.0;
-		Vq_ref = 5.0;
+		// ASR
+		if(asr.enable == 1)
+		{
+			asr.omega_ref = omega_ref;
+			ASR_Refresh(&asr);
+			acr.Id_ref = asr.Id_ref;
+			acr.Iq_ref = asr.Iq_ref;
+		}
+		else
+		{
+			acr.Id_ref = Id_ref;
+			acr.Iq_ref = Iq_ref;
+		}
 
+		// ACR
+		if(acr.enable == 1)
+		{
+			ACR_Refresh(&acr);
+			Vd_ref = acr.Vd_ref + incEnc.omega_re * -M_Lq * Iq;
+			Vq_ref = acr.Vq_ref + incEnc.omega_re * (M_Psi + M_Ld * Id);
+		}
+		else
+		{
+			Vd_ref = 0.0;
+			Vq_ref = 0.0;
+		}
 
 		dq2uvw(&Vu_ref, &Vv_ref, &Vw_ref, Vd_ref, Vq_ref, cos_theta_re, sin_theta_re);
 
@@ -236,7 +254,12 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 #endif
 
+
+		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+
 	}
+
+
 
 }
 
@@ -296,9 +319,27 @@ int main(void)
   HAL_ADC_Start_IT(&hadc3);
 
 
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   IncEnc_Init(&incEnc, &htim1, 2000, 100E-6, 0.0, 3.14159f, 4);
+
+
+  // ACR Setting
+  acr.Init.cycleTime = TS;
+  acr.Init.Id_limit = 3.0f;
+  acr.Init.Iq_limit = 3.0f;
+  acr.Init.Id = &Id;
+  acr.Init.Iq = &Iq;
+  ACR_CalcGain(&acr, M_R, (M_Ld + M_Lq) / 2.0, 2000);
+
+  // ASR Setting
+  asr.Init.cycleTime = TS;
+  asr.Init.Iq_limitError = &acr.Iq_limitError;
+  asr.Init.omega_limit = 500;
+  asr.Init.omega = &incEnc.omega_rm;
+
+  asr.Init.Kp = 0.03;
+  asr.Init.Ki = 0.0;
 
   while(incEnc.z_pulse_detected == 0)
   {
@@ -314,17 +355,15 @@ int main(void)
 
   __HAL_TIM_SET_COMPARE(&htim8, TIM_CHANNEL_4, 8990);
 
-  HAL_TIM_PWM_Start_IT(&htim8, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start_IT(&htim8, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start_IT(&htim8, TIM_CHANNEL_3);
-
-  HAL_TIMEx_PWMN_Start_IT(&htim8, TIM_CHANNEL_1);
-  HAL_TIMEx_PWMN_Start_IT(&htim8, TIM_CHANNEL_2);
-  HAL_TIMEx_PWMN_Start_IT(&htim8, TIM_CHANNEL_3);
+  StartPWM();
 
   sample_start = 1;
 
+  HAL_Delay(1000);
 
+  ACR_Start(&acr);
+
+  ASR_Start(&asr);
 
 
   //printf("Hello myServoAmpProject. \n");
@@ -347,14 +386,7 @@ int main(void)
 	  {
 		  int i;
 
-
-		  HAL_TIMEx_PWMN_Stop_IT(&htim8, TIM_CHANNEL_1);
-		  HAL_TIMEx_PWMN_Stop_IT(&htim8, TIM_CHANNEL_2);
-		  HAL_TIMEx_PWMN_Stop_IT(&htim8, TIM_CHANNEL_3);
-
-		  HAL_TIM_PWM_Stop_IT(&htim8, TIM_CHANNEL_1);
-		  HAL_TIM_PWM_Stop_IT(&htim8, TIM_CHANNEL_2);
-		  HAL_TIM_PWM_Stop_IT(&htim8, TIM_CHANNEL_3);
+		  StopPWM();
 
 		  HAL_Delay(100);
 
@@ -439,6 +471,8 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+
 
 /* USER CODE END 4 */
 

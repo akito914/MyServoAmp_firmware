@@ -118,6 +118,8 @@ uint8_t receive_pos = 0;
 
 uint8_t soundBuf[2][256] = {{0}};
 
+volatile float sound_amp = 0.5;
+
 
 
 /* USER CODE END PV */
@@ -220,7 +222,7 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 		if(play_enable[cursor_bufNum] == 1)
 		{
 			acr.Id_ref = 0.0;
-			acr.Iq_ref = 0.058*0 + (soundBuf[cursor_bufNum][cursor_pos] * 0.0078125f - 1.0f) * 0.5;
+			acr.Iq_ref = 0.059*0 + (soundBuf[cursor_bufNum][cursor_pos] * 0.0078125f - 1.0f) * sound_amp;
 			cursor_pos++;
 			if(cursor_pos >= 256)
 			{
@@ -414,6 +416,7 @@ int main(void)
 
 
   unsigned char c = 'a';
+  /*
   do{
   HAL_UART_Transmit(&huart2, &c, 1, 1);
   }while(HAL_UART_Receive(&huart2, soundBuf[0], 256, 1000) != HAL_OK);
@@ -423,6 +426,7 @@ int main(void)
   HAL_UART_Transmit(&huart2, &c, 1, 1);
   }while(HAL_UART_Receive(&huart2, soundBuf[1], 256, 1000) != HAL_OK);
   play_enable[1] = 1;
+  */
 
   /* USER CODE END 2 */
 
@@ -431,20 +435,26 @@ int main(void)
   while (1)
   {
 
-	  // バッファ0の再生完了を待つ
+	  HAL_Delay(1);
+
+	  // バッファ0の再生完�?を�?つ
 	  //while(cursor_bufNum == 0);
 	  while(play_enable[0] != 0);
 
 	  do{
+		  //while(HAL_UART_Receive(&huart2, soundBuf[0], 1, 1) == HAL_OK);
 		  HAL_UART_Transmit(&huart2, &c, 1, 1);
 	  }while(HAL_UART_Receive(&huart2, soundBuf[0], 256, 1000) != HAL_OK);
 	  play_enable[0] = 1;
 
-	  // バッファ1の再生完了を待つ
+	  HAL_Delay(1);
+
+	  // バッファ1の再生完�?を�?つ
 	  //while(cursor_bufNum == 1);
 	  while(play_enable[1] != 0);
 
 	  do{
+		  //while(HAL_UART_Receive(&huart2, soundBuf[1], 1, 1) == HAL_OK);
 		  HAL_UART_Transmit(&huart2, &c, 1, 1);
 	  }while(HAL_UART_Receive(&huart2, soundBuf[1], 256, 1000) != HAL_OK);
 	  play_enable[1] = 1;

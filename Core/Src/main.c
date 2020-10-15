@@ -108,6 +108,11 @@ int sample_start = 0;
 int sample_count = 0;
 
 
+volatile float virtual_Ks = 0.0;
+volatile float virtual_Jm = M_Jm;
+volatile float virtual_Dm = 0.0;
+
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -191,15 +196,22 @@ float TorqueControl(float torque_ref)
 
 
 // return: estimated disturbance torque
-float ImpedanceControl(float Jv, float Dv)
+float ImpedanceControl(float Jv, float Dv, float Kv)
 {
 	const float g_dis = 400.0; // DOB cut off
 	const float LPF_coeff = 1.0 / (1.0 + g_dis * TS);
 
-	static float torque_ref = 0.0;
+	const float Kpp = 40.0;
+	const float Kps = 400.0;
+
+	static float accel_cmd = 0.0;
 	static float LPF_in = 0.0;
 	static float LPF_out = 0.0;
 	static float t_dis_est = 0.0;
+
+	static float theta_ref = 0.0;
+	static float omega_ref = 0.0;
+	static float accel_ref = 0.0;
 
 
 	/***** DOB *****/
@@ -210,9 +222,13 @@ float ImpedanceControl(float Jv, float Dv)
 	t_dis_est = LPF_out - g_dis * M_Jm * incEnc.omega_rm;
 	/****************/
 
-	torque_ref = -t_dis_est / Jv * M_Jm + incEnc.omega_rm * Dv;
+	accel_ref = (-t_dis_est - Dv * omega_ref - Kv * theta_ref) / Jv;
+	omega_ref += accel_ref * TS;
+	theta_ref += omega_ref * TS;
 
-	return ((torque_ref + t_dis_est) / M_Kt);
+	accel_cmd = accel_ref + (omega_ref - incEnc.omega_rm) * Kps + (theta_ref - incEnc.theta_rm) * Kpp;
+
+	return (accel_cmd * M_Jm / M_Kt + t_dis_est / M_Kt);
 }
 
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
@@ -249,7 +265,7 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		//acr.Iq_ref = TorqueControl(0.001*(5 - incEnc.omega_rm));
 		//acr.Iq_ref = TorqueControl(0.0);
-		acr.Iq_ref = ImpedanceControl(M_Jm * 1000, 0.0);
+		acr.Iq_ref = ImpedanceControl(virtual_Jm, virtual_Dm, virtual_Ks);
 
 		// ACR
 		if(acr.enable == 1)

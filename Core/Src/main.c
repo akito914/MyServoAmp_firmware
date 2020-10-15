@@ -21,6 +21,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "adc.h"
+#include "dac.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -218,11 +219,11 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 
 		/***** Sound ******/
 
-		HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, cursor_bufNum);
+		//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, cursor_bufNum);
 		if(play_enable[cursor_bufNum] == 1)
 		{
 			acr.Id_ref = 0.0;
-			acr.Iq_ref = 0.059*0 + (soundBuf[cursor_bufNum][cursor_pos] * 0.0078125f - 1.0f) * sound_amp;
+			acr.Iq_ref = 0.06*0+0.08 + (soundBuf[cursor_bufNum][cursor_pos] * 0.0078125f - 1.0f) * sound_amp;
 			cursor_pos++;
 			if(cursor_pos >= 256)
 			{
@@ -238,6 +239,8 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 			acr.Iq_ref = 0.0;
 			//HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 		}
+
+		HAL_DAC_SetValue(&hdac, DAC_CHANNEL_2, DAC_ALIGN_12B_L, (uint32_t)(((acr.Iq_ref / 2.0) + 1.0f) * 4096));
 
 		/*******************/
 
@@ -347,6 +350,7 @@ int main(void)
   MX_ADC3_Init();
   MX_TIM1_Init();
   MX_TIM8_Init();
+  MX_DAC_Init();
   /* USER CODE BEGIN 2 */
 
 
@@ -365,7 +369,7 @@ int main(void)
   HAL_ADC_Start_IT(&hadc3);
 
 
-  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+  //HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
 
   IncEnc_Init(&incEnc, &htim1, 2000, 100E-6, 0.0, 3.14159f, 4);
 
@@ -409,6 +413,9 @@ int main(void)
 
   ACR_Start(&acr);
 
+  HAL_DAC_Start(&hdac, DAC_CHANNEL_2);
+
+
   //ASR_Start(&asr);
 
 
@@ -437,7 +444,7 @@ int main(void)
 
 	  HAL_Delay(1);
 
-	  // バッファ0の再生完�?を�?つ
+	  // バッファ0の再生完�?を�?つ
 	  //while(cursor_bufNum == 0);
 	  while(play_enable[0] != 0);
 
@@ -449,7 +456,7 @@ int main(void)
 
 	  HAL_Delay(1);
 
-	  // バッファ1の再生完�?を�?つ
+	  // バッファ1の再生完�?を�?つ
 	  //while(cursor_bufNum == 1);
 	  while(play_enable[1] != 0);
 

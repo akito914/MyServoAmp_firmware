@@ -168,7 +168,52 @@ void dq2uvw(float *u, float *v, float *w, float d, float q, float Cos, float Sin
 	*w = - *u - *v;
 }
 
+float t_dis_est_res = 0.0;
 
+// return: estimated disturbance torque
+float TorqueControl(float torque_ref)
+{
+	const float g_dis = 600.0; // DOB cut off
+	const float LPF_coeff = 1.0 / (1.0 + g_dis * TS);
+
+	static float LPF_in = 0.0;
+	static float LPF_out = 0.0f;
+	static float t_dis_est = 0.0;
+
+	LPF_in = Iq * M_Kt + incEnc.omega_rm * g_dis * M_Jm;
+
+	LPF_out = LPF_out * LPF_coeff + (1.0f - LPF_coeff) * LPF_in;
+
+	t_dis_est_res = t_dis_est = LPF_out - g_dis * M_Jm * incEnc.omega_rm;
+
+	return ((torque_ref + t_dis_est) / M_Kt);
+}
+
+
+// return: estimated disturbance torque
+float ImpedanceControl(float Jv, float Dv)
+{
+	const float g_dis = 400.0; // DOB cut off
+	const float LPF_coeff = 1.0 / (1.0 + g_dis * TS);
+
+	static float torque_ref = 0.0;
+	static float LPF_in = 0.0;
+	static float LPF_out = 0.0;
+	static float t_dis_est = 0.0;
+
+
+	/***** DOB *****/
+	LPF_in = Iq * M_Kt + incEnc.omega_rm * g_dis * M_Jm;
+
+	LPF_out = LPF_out * LPF_coeff + (1.0f - LPF_coeff) * LPF_in;
+
+	t_dis_est = LPF_out - g_dis * M_Jm * incEnc.omega_rm;
+	/****************/
+
+	torque_ref = -t_dis_est / Jv * M_Jm + incEnc.omega_rm * Dv;
+
+	return ((torque_ref + t_dis_est) / M_Kt);
+}
 
 void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 {
@@ -200,6 +245,11 @@ void HAL_TIM_PeriodElapsedCallback (TIM_HandleTypeDef * htim)
 			acr.Id_ref = Id_ref;
 			acr.Iq_ref = Iq_ref;
 		}
+
+
+		//acr.Iq_ref = TorqueControl(0.001*(5 - incEnc.omega_rm));
+		//acr.Iq_ref = TorqueControl(0.0);
+		acr.Iq_ref = ImpedanceControl(M_Jm * 1000, 0.0);
 
 		// ACR
 		if(acr.enable == 1)
@@ -363,7 +413,7 @@ int main(void)
 
   ACR_Start(&acr);
 
-  ASR_Start(&asr);
+  //ASR_Start(&asr);
 
 
   //printf("Hello myServoAmpProject. \n");

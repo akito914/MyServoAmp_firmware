@@ -446,7 +446,7 @@ int main(void)
   {
 	  static int count = 0;
 
-	  HAL_Delay(1);
+	  HAL_Delay(100);
 #if 0
 	  if(sample_start == 2 && freq <= 1.0)
 	  {
@@ -467,16 +467,18 @@ int main(void)
 #endif
 
 
-	  //refreshIncEnc(&incEnc);
+	  while(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET) HAL_Delay(100);
+	  while(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET) HAL_Delay(100);
 
-	  if(count < 10)
-	  {
-		  count++;
-	  }
-	  else
-	  {
-		  //printf("count = %d\n", incEnc.htim->Instance->CNT);
+	  count++;
+	  if(count >= 3)
 		  count = 0;
+
+	  switch(count)
+	  {
+	  case 0: virtual_Ks = 0.00; virtual_Jm = M_Jm * 1; virtual_Dm = M_Dm * 0; break;
+	  case 1: virtual_Ks = 0.005; virtual_Jm = M_Jm * 1; virtual_Dm = M_Dm * 10; break;
+	  case 2: virtual_Ks = 0.005; virtual_Jm = M_Jm * 100; virtual_Dm = M_Dm * 0; break;
 	  }
 
     /* USER CODE END WHILE */

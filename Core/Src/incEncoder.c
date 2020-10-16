@@ -24,6 +24,9 @@ void IncEnc_Init(IncEnc_TypeDef *hIncEnc, TIM_HandleTypeDef *htim, uint32_t PPR,
 	hIncEnc->theta_re = 0.0;
 	hIncEnc->omega_re = 0.0;
 
+	hIncEnc->Init.MA_num = 4;
+	hIncEnc->omega_buf_count = 0;
+
 	hIncEnc->z_pulse_detected = 0;
 
 	hIncEnc->Init.htim = htim;
@@ -39,6 +42,8 @@ int IncEnc_Update(IncEnc_TypeDef *hIncEnc)
 	static float theta_re_temp;
 
     static IncEnc_InitTypeDef *incEnc_Init;
+
+    static float MA_sum;
 
     incEnc_Init = &(hIncEnc->Init);
 
@@ -63,7 +68,16 @@ int IncEnc_Update(IncEnc_TypeDef *hIncEnc)
 	hIncEnc->theta_rm += hIncEnc->diff_raw_pos;
 
 	// 機械速度の計算
-	hIncEnc->omega_rm = hIncEnc->diff_raw_pos / incEnc_Init->cycleTime;
+
+	hIncEnc->omega_buf[hIncEnc->omega_buf_count++] = hIncEnc->diff_raw_pos / incEnc_Init->cycleTime;
+	if(hIncEnc->omega_buf_count >= hIncEnc->Init.MA_num)
+		hIncEnc->omega_buf_count = 0;
+
+	MA_sum = 0.0;
+	for(int i = 0; i < hIncEnc->Init.MA_num; i++)
+		MA_sum += hIncEnc->omega_buf[i];
+
+	hIncEnc->omega_rm = MA_sum / hIncEnc->Init.MA_num;
 
 	// 電気角の計算
 	theta_re_temp = fmodf(hIncEnc->raw_pos * hIncEnc->Init.Pn + incEnc_Init->theta_re_offset, 2.0 * M_PI);

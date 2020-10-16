@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 
+#define MAX_MA_NUM	(32)
+
 
 #include "tim.h"
 
@@ -23,6 +25,8 @@ typedef struct{
 
     float theta_m_offset;
     float theta_re_offset;
+
+    int MA_num; // moving average number
 
     float Pn; // Pole pairs
 
@@ -49,6 +53,9 @@ typedef struct{
     float theta_re;
     float omega_rm;
     float omega_re;
+
+    float omega_buf[MAX_MA_NUM];
+    uint32_t omega_buf_count;
 
 }IncEnc_TypeDef;
 

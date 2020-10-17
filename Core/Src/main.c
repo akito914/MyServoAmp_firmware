@@ -337,7 +337,7 @@ int main(void)
   asr.Init.Iq_limitError = &acr.Iq_limitError;
   asr.Init.omega_limit = 500;
   asr.Init.omega = &incEnc.omega_rm;
-  ASR_CalcGain(&asr, M_Jm, M_Dm, M_Kt, 200);
+  ASR_CalcGain(&asr, M_Jm, M_Dm, M_Kt, 100);
 
   while(incEnc.z_pulse_detected == 0)
   {
@@ -397,6 +397,12 @@ int main(void)
 
 	  }
 #endif
+
+
+	  while(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_SET) HAL_Delay(10);
+	  while(HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET) HAL_Delay(10);
+
+	  omega_ref = 0.0;
 
 
 	  //refreshIncEnc(&incEnc);

@@ -337,9 +337,7 @@ int main(void)
   asr.Init.Iq_limitError = &acr.Iq_limitError;
   asr.Init.omega_limit = 500;
   asr.Init.omega = &incEnc.omega_rm;
-
-  asr.Init.Kp = 0.03;
-  asr.Init.Ki = 0.0;
+  ASR_CalcGain(&asr, M_Jm, M_Dm, M_Kt, 200);
 
   while(incEnc.z_pulse_detected == 0)
   {

@@ -8,7 +8,13 @@
 #define M_R		(2.76)
 #define M_Psi	(0.0171)
 #define M_Pn	(4)
-
+#define M_Kt	(M_Psi * M_Pn)
+//#define M_Jm	(4.3454e-06) // with coupling
+//#define M_Dm	(2.4141e-05) // with coupling
+//#define M_Jm	(1.1032e-05) // with handle
+//#define M_Dm	(2.5742e-05) // with handle
+#define M_Jm	(1.3265e-05) // with linear stage
+#define M_Dm	(2.9018e-04) // with linear stage
 
 
 #endif /* _PARAMETERS_H_ */
